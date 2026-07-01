@@ -1,3 +1,4 @@
+-- Connected Discord-GitHub
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local Debris = game:GetService("Debris")
@@ -7,7 +8,7 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local FADE_TIME = 0.4
-local SPAWN_RATE = 0.3
+local SPAWN_RATE = 0.05
 local WALK_SPEED_THRESHOLD = 16
 
 local ANIM_IDS = {
