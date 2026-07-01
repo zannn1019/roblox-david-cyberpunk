@@ -283,10 +283,9 @@ local function startGhostTrail(duration)
 	applyScreenShake(character, 0.4, 1.8)
 
 	task.spawn(function()
-		local ghostIndex = 0
 		while os.clock() - startTime < duration do
 			local elapsed = os.clock() - startTime
-			local t = 1 - (elapsed / duration)  
+			local t = 1 - (elapsed / duration)
 
 			local color = getGradientColor(t)
 			createGhost(character, color)
@@ -349,8 +348,6 @@ local function handleInputBegan(input, gameProcessed)
 
 	elseif input.KeyCode == Enum.KeyCode.R then
 		startGhostTrail(6)
-	elseif input.KeyCode == Enum.KeyCode.Y then
-		
 	end
 end
 
@@ -362,11 +359,6 @@ local function handleInputEnded(input, gameProcessed)
 		setSpeed(player.Character, Config.WalkingSpeed)
 	end
 end
-
-local RunService = game:GetService("RunService")
-
-RunService.Heartbeat:Connect(function(deltaTime)
-end)   
 
 ------------------------------------------------------------------------
 -- Module
