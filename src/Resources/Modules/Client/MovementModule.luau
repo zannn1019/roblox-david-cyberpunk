@@ -6,7 +6,6 @@ local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
 
 local FADE_TIME = 0.4
 local SPAWN_RATE = 0.05
@@ -490,6 +489,7 @@ function MovementModule:Init()
 	end)
 
 	if player.Character then
+		createStaminaBar(player.Character)
 		setSpeed(player.Character, Config.WalkingSpeed)
 		applyCustomAnimations(player.Character)
 	end
