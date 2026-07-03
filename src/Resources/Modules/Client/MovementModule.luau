@@ -6,6 +6,7 @@ local TweenService = game:GetService("TweenService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 
 local FADE_TIME = 0.4
 local SPAWN_RATE = 0.05
@@ -18,11 +19,11 @@ local ANIM_IDS = {
 }
 
 local GHOST_GRADIENT = {
-	Color3.fromRGB(255, 220, 0),   
-	Color3.fromRGB(255, 140, 0),   
-	Color3.fromRGB(220, 50, 50),  
-	Color3.fromRGB(150, 50, 200), 
-	Color3.fromRGB(60, 80, 255), 
+	Color3.fromRGB(255, 220, 0),
+	Color3.fromRGB(255, 140, 0),
+	Color3.fromRGB(220, 50, 50),
+	Color3.fromRGB(150, 50, 200),
+	Color3.fromRGB(60, 80, 255)
 }
 
 -- Config
@@ -34,13 +35,24 @@ local Config = {
 	DashVelocity    = 75,
 	NormalFOV       = 70,
 	WarpFOV         = 200,
-	EffectCooldown  = 20
+	EffectCooldown  = 10
+}
+
+-- Skillset
+local Skillset = {
+	Sandevistan = {
+		Name     = "Sandevistan",
+		Cooldown = Config.EffectCooldown,
+		Keybind  = Enum.KeyCode.R
+	},
 }
 
 -- State
 local State = {
 	isSprinting      = false,
 	isDashOnCooldown = false,
+	isEffectOnCooldown = false,
+	isEffectActive = false,
 	currentStamina   = Config.MaxStamina,
 	playerClones     = {},
 }
@@ -48,6 +60,7 @@ local State = {
 -- References
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
+local playerGui = player.PlayerGui:WaitForChild("Gui")
 
 local sandyColorGrading = Lighting:FindFirstChild("SandevistanColor") or Instance.new("ColorCorrectionEffect")
 sandyColorGrading.Name = "SandevistanColor"
@@ -76,6 +89,95 @@ local function setSpeed(character, speed)
 	end
 end
 
+
+------------------------------------------------------------------------
+-- Stamina Bar
+------------------------------------------------------------------------
+
+local staminaFill = nil 
+
+local function createStaminaBar(character)
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+
+	local existing = rootPart:FindFirstChild("StaminaBarGui")
+	if existing then existing:Destroy() end
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name          = "StaminaBarGui"
+	billboard.Size          = UDim2.new(0, 10, 0, 200)
+	billboard.StudsOffset   = Vector3.new(3, 0, 0)
+	billboard.ResetOnSpawn  = false
+	billboard.Parent        = rootPart
+
+	local background = Instance.new("Frame")
+	background.Name            = "Background"
+	background.Size            = UDim2.new(1, 0, 1, 0)
+	background.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	background.BorderSizePixel = 0
+	background.Parent          = billboard
+
+	local fill = Instance.new("Frame")
+	fill.Name              = "Fill"
+	fill.AnchorPoint       = Vector2.new(0, 1)
+	fill.Position          = UDim2.new(0, 0, 1, 0)
+	fill.Size              = UDim2.new(1, 0, 1, 0)
+	fill.BackgroundColor3  = Color3.fromRGB(0, 132, 255)
+	fill.BorderSizePixel   = 0
+	fill.Parent            = background
+
+	staminaFill = fill
+end
+
+local function updateCooldownTime(skillSet)
+    local SkillGui = playerGui:FindFirstChild("SkillGui")
+    if not SkillGui then return end
+    local SkillCooldown = SkillGui.Text:WaitForChild("SkillCooldown")
+    local SkillName = SkillGui.Text:WaitForChild("SkillName")
+    local SkillKeybind = SkillGui.Text:WaitForChild("SkillKeybind")
+    local CooldownSlider = SkillGui:WaitForChild("Filler")
+
+    local cooldownDuration = skillSet.Sandevistan.Cooldown
+    SkillName.Text = skillSet.Sandevistan.Name
+    SkillCooldown.Text = string.format("%.1f", cooldownDuration)
+    SkillKeybind.Text = skillSet.Sandevistan.Keybind.Name
+
+    local endTime = os.clock() + cooldownDuration
+
+	task.spawn(function()
+		while os.clock() < endTime do
+			local remainingTime = math.max(0, endTime - os.clock())
+			local fillSize = UDim2.new(remainingTime / cooldownDuration, 0, 1, 0)
+			CooldownSlider.Size = fillSize
+			SkillCooldown.Text = string.format("%.1f", remainingTime)
+			task.wait(0.1)
+		end
+
+		CooldownSlider.Size = UDim2.new(0, 0, 1, 0)
+		SkillCooldown.Text = string.format("%.1f", cooldownDuration)
+	end)
+end
+
+local function updateStaminaBar(current, max)
+	if not staminaFill or not staminaFill.Parent then return end
+
+	local percent = math.clamp(current / max, 0, 1)
+
+	TweenService:Create(
+		staminaFill,
+		TweenInfo.new(0.1, Enum.EasingStyle.Linear),
+		{ Size = UDim2.new(1, 0, percent, 0) }
+	):Play()
+
+	local color
+	if percent > 0.6 then
+		color = Color3.fromRGB(30, 180, 30)
+	elseif percent > 0.3 then
+		color = Color3.fromRGB(220, 180, 0)  
+	else
+		color = Color3.fromRGB(200, 30, 30)    
+	end
+
+	staminaFill.BackgroundColor3 = color
+end
 
 ------------------------------------------------------------------------
 -- Shockwave
@@ -291,6 +393,7 @@ local function startGhostTrail(duration)
 			createGhost(character, color)
 			task.wait(SPAWN_RATE)
 		end
+		State.isEffectActive = false
 		clearGhostTrail()
 	end)
 end
@@ -331,7 +434,10 @@ local function handleInputBegan(input, gameProcessed)
 
 	if input.KeyCode == Enum.KeyCode.LeftShift then
 		State.isSprinting = true
-		setSpeed(player.Character, Config.RunningSpeed)
+		if State.currentStamina > 0 then
+			setSpeed(player.Character, Config.RunningSpeed)
+			return
+		end
 
 	elseif input.KeyCode == Enum.KeyCode.Q then
 		if State.isDashOnCooldown then return end
@@ -347,7 +453,15 @@ local function handleInputBegan(input, gameProcessed)
 		dash(humanoid, rootPart)
 
 	elseif input.KeyCode == Enum.KeyCode.R then
+		if State.isEffectOnCooldown then return end
+		if State.isEffectActive then return end
+		State.isEffectOnCooldown = true
+		State.isEffectActive = true
 		startGhostTrail(6)
+		updateCooldownTime(Skillset)
+		task.delay(Config.EffectCooldown, function()
+			State.isEffectOnCooldown = false
+		end)
 	end
 end
 
@@ -370,6 +484,7 @@ function MovementModule:Init()
 	player.CharacterAdded:Connect(function(character)
 		local humanoid = character:WaitForChild("Humanoid")
 		humanoid.WalkSpeed = Config.WalkingSpeed
+		createStaminaBar(character)
 		task.wait(0.1)
 		applyCustomAnimations(character)
 	end)
@@ -382,5 +497,38 @@ function MovementModule:Init()
 	UserInputService.InputBegan:Connect(handleInputBegan)
 	UserInputService.InputEnded:Connect(handleInputEnded)
 end
+
+local lastVisualStamina = -1
+
+RunService.Heartbeat:Connect(function(deltaTime)
+	local character = player.Character
+	if not character then return end
+
+	if State.isSprinting then
+		State.currentStamina = math.clamp(
+			State.currentStamina - (20 * deltaTime),
+			0,
+			Config.MaxStamina
+		)
+
+		if State.currentStamina <= 0 then
+			State.isSprinting = false
+			setSpeed(character, Config.WalkingSpeed)
+		end
+	else
+		if State.currentStamina < Config.MaxStamina then
+			State.currentStamina = math.clamp(
+				State.currentStamina + (20 * deltaTime),
+				0,
+				Config.MaxStamina
+			)
+		end
+	end
+
+	if State.currentStamina ~= lastVisualStamina then
+		updateStaminaBar(State.currentStamina, Config.MaxStamina)
+		lastVisualStamina = State.currentStamina 
+	end
+end)
 
 return MovementModule

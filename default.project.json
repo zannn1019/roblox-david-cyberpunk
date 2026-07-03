@@ -5,10 +5,18 @@
 
   "ReplicatedStorage": {
     "Resources": {
-      "$path": "src/Resources"
+      "$path": "src/Resources",
+      "Remotes": {
+        "$className": "Folder",
+        "AbilityEvent": {
+          "$className": "RemoteEvent"
+        },
+        "DamageEvent": {
+          "$className": "RemoteEvent"
+        }
+      }
     }
   },
-
     "ServerScriptService": {
       "Server": {
         "$path": "src/Server"
