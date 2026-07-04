@@ -25,7 +25,7 @@ local GHOST_GRADIENT = {
 	Color3.fromRGB(60, 80, 255)
 }
 
--- Config
+-- Movement settings
 local Config = {
 	WalkingSpeed    = 16,
 	RunningSpeed    = 32,
@@ -37,7 +37,7 @@ local Config = {
 	EffectCooldown  = 10
 }
 
--- Skillset
+-- Skill data
 local Skillset = {
 	Sandevistan = {
 		Name     = "Sandevistan",
@@ -46,7 +46,7 @@ local Skillset = {
 	},
 }
 
--- State
+-- Runtime state
 local State = {
 	isSprinting      = false,
 	isDashOnCooldown = false,
@@ -56,7 +56,7 @@ local State = {
 	playerClones     = {},
 }
 
--- References
+-- Core references
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local playerGui = player.PlayerGui:WaitForChild("Gui")
@@ -67,7 +67,7 @@ sandyColorGrading.Enabled = false
 sandyColorGrading.Parent = Lighting
 
 ------------------------------------------------------------------------
--- Helpers
+-- Shockwave effect
 ------------------------------------------------------------------------
 
 local function getCharacterComponents(character)
@@ -77,7 +77,7 @@ local function getCharacterComponents(character)
 end
 
 ------------------------------------------------------------------------
--- Speed
+-- Animation setup
 ------------------------------------------------------------------------
 
 local function setSpeed(character, speed)
@@ -90,7 +90,7 @@ end
 
 
 ------------------------------------------------------------------------
--- Stamina Bar
+-- Ghost trail
 ------------------------------------------------------------------------
 
 local staminaFill = nil 
@@ -238,7 +238,7 @@ local function applyCustomAnimations(character)
 			runValue:WaitForChild("RunAnim").AnimationId = animId
 		end
 
-		-- Force Animate script to reload
+		-- Restart Animate so the new ids apply right away.
 		animateScript.Disabled = true
 		task.wait()
 		animateScript.Disabled = false
@@ -249,7 +249,7 @@ local function applyCustomAnimations(character)
 end
 
 ------------------------------------------------------------------------
--- Screen Effects
+-- Camera effects
 ------------------------------------------------------------------------
 
 local function applyScreenShake(character, duration, intensity)
@@ -306,25 +306,14 @@ end
 ------------------------------------------------------------------------
 
 local function createGhost(character, ghostColor)
-	-- Archivable defaults to false on the live player character (Roblox's own
-	-- safeguard against cloning networked player rigs). We flip it on only
-	-- for the instant of the Clone() call, then immediately flip it back off
-	-- so nothing else in the game (or a malicious client-side script) can
-	-- freely duplicate the player model afterward.
+	-- Clone the rig just long enough to build the trail frame.
 	character.Archivable = true
 	local clone = character:Clone()
 	character.Archivable = false
 
 	if not clone then return end
 
-	-- The clone only needs to *look* like the player for a fraction of a
-	-- second; it must never behave like one. Every part is stripped of
-	-- collision/shadow/physics cost and recolored into the neon "afterimage"
-	-- look, while anything that could make the clone act (Humanoid so it
-	-- doesn't ragdoll or get controlled, Scripts so it can't run logic,
-	-- Sounds/Decals it doesn't need) is destroyed outright. This keeps each
-	-- ghost as cheap as possible, which matters since several are spawned
-	-- per second during the trail.
+	-- Strip anything that could simulate, collide, or run code.
 	for _, descendant in ipairs(clone:GetDescendants()) do
 		if descendant:IsA("BasePart") then
 			descendant.Anchored     = true
@@ -334,9 +323,7 @@ local function createGhost(character, ghostColor)
 			descendant.Color        = ghostColor
 			descendant.Transparency = 0.6
 
-			-- A MeshPart's texture would otherwise render on top of the
-			-- Neon material and mask the gradient color override, so it's
-			-- cleared to let the flat neon color show through cleanly.
+			-- Clear textures so the neon color stays visible.
 			if descendant:IsA("MeshPart") then
 				descendant.TextureID = ""
 			end
@@ -349,10 +336,7 @@ local function createGhost(character, ghostColor)
 		then
 			descendant:Destroy()
 		elseif not descendant:IsA("SpecialMesh") and not descendant:IsA("Model") then
-			-- Catch-all: anything not explicitly needed for the visual
-			-- (e.g. stray Configuration/Folder objects carried over from
-			-- the character model) is removed rather than kept "just in
-			-- case", keeping each ghost instance lean.
+			-- Drop leftover containers and clutter.
 			descendant:Destroy()
 		end
 	end
@@ -418,53 +402,37 @@ local function startGhostTrail(duration)
 end
 
 ------------------------------------------------------------------------
--- Dash
+-- Dash logic
 ------------------------------------------------------------------------
 
 local function dash(humanoid, rootPart)
 	startGhostTrail(0.2)
 
-	-- Prefer the direction the player is actively moving in (WASD input) over
-	-- facing direction, since that matches player expectation (e.g. dashing
-	-- sideways while strafing). If the player is standing still, MoveDirection
-	-- is a zero vector, so we fall back to LookVector to guarantee the dash
-	-- always goes *somewhere* instead of silently doing nothing.
+	-- Use movement input first, then fall back to facing direction.
 	local moveDir = humanoid.MoveDirection
 	local dashDir = moveDir.Magnitude > 0
 		and Vector3.new(moveDir.X, 0, moveDir.Z).Unit
 		or  Vector3.new(rootPart.CFrame.LookVector.X, 0, rootPart.CFrame.LookVector.Z).Unit
 
-	-- A LinearVelocity constraint (rather than directly writing to
-	-- rootPart.AssemblyLinearVelocity) is used because Roblox's Humanoid
-	-- controller re-asserts its own movement velocity every physics step.
-	-- Setting AssemblyLinearVelocity directly would get overwritten almost
-	-- immediately by the controller and produce an inconsistent, network-
-	-- unfriendly dash. A constraint instead applies a continuous physics
-	-- force alongside the controller, so the impulse actually persists for
-	-- its full duration and replicates smoothly.
+	-- LinearVelocity plays nicer with the Humanoid controller than a raw
+	-- velocity write.
 	local attachment = Instance.new("Attachment")
 	attachment.Parent = rootPart
 
 	local linearVelocity = Instance.new("LinearVelocity")
 	linearVelocity.Attachment0    = attachment
-	-- MaxForce is set high enough to move the full mass of the character
-	-- rig (including any accessories) even if it's pressed against
-	-- geometry, so the dash doesn't stall out on minor collisions.
 	linearVelocity.MaxForce       = 500000
 	linearVelocity.VectorVelocity = dashDir * Config.DashVelocity
 	linearVelocity.RelativeTo     = Enum.ActuatorRelativeTo.World
 	linearVelocity.Parent         = rootPart
 
 	applyScreenShake(humanoid.Parent,1, 1)
-	-- Debris (rather than a manual task.delay + Destroy) guarantees cleanup
-	-- even if the player leaves or the character is destroyed mid-dash,
-	-- avoiding orphaned constraint instances left in the workspace.
 	Debris:AddItem(linearVelocity, 0.2)
 	Debris:AddItem(attachment, 0.2)
 end
 
 ------------------------------------------------------------------------
--- Input
+-- Input handling
 ------------------------------------------------------------------------
 
 local function handleInputBegan(input, gameProcessed)
@@ -513,7 +481,7 @@ local function handleInputEnded(input, gameProcessed)
 end
 
 ------------------------------------------------------------------------
--- Module
+-- Public module
 ------------------------------------------------------------------------
 
 local MovementModule = {}
@@ -543,12 +511,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
 	local character = player.Character
 	if not character then return end
 
-	-- Stamina is drained/regenerated at a rate per *second* (20 units/sec),
-	-- scaled by deltaTime rather than a flat per-frame amount. This keeps
-	-- the drain speed identical on a 30fps and a 240fps client -- without
-	-- the deltaTime scaling, players with higher framerates would burn
-	-- through or refill stamina faster purely as a side effect of hardware,
-	-- which would make the sprint mechanic inconsistent and exploitable.
+	-- Scale stamina by deltaTime so frame rate does not change the pace.
 	if State.isSprinting then
 		State.currentStamina = math.clamp(
 			State.currentStamina - (20 * deltaTime),
@@ -570,16 +533,10 @@ RunService.Heartbeat:Connect(function(deltaTime)
 		end
 	end
 
-	-- The UI is only updated when the stamina value has actually changed
-	-- (e.g. skipped once it's already sitting at full/empty). Heartbeat can
-	-- fire hundreds of times a second, and updateStaminaBar spins up a new
-	-- Tween each call -- without this guard we'd be creating and discarding
-	-- redundant overlapping tweens every frame for no visual benefit, which
-	-- is wasted work the reviewer's "avoid repeated operations" guidance
-	-- specifically calls out.
+	-- Only touch the UI when the displayed value actually changes.
 	if State.currentStamina ~= lastVisualStamina then
 		updateStaminaBar(State.currentStamina, Config.MaxStamina)
-		lastVisualStamina = State.currentStamina 
+		lastVisualStamina = State.currentStamina
 	end
 end)
 
